@@ -1,13 +1,16 @@
-# Internal Stencil Dash output target
+# Stencil Dash output target
 
-This root-level module generates the React bridge consumed by Plotly's official
-`dash-generate-components` command for `packages/dash`.
+`@revolist/stencil-dash-output-target` generates the React bridge consumed by
+Plotly's official `dash-generate-components` command.
 
-It is private RevoGrid build tooling. It is not independently versioned,
-published to npm, or released from a separate repository.
+## Installation
+
+```bash
+npm install --save-dev @revolist/stencil-dash-output-target
+```
 
 ```ts
-import { dashOutputTarget } from './stencil-dash-output-target/src/index';
+import { dashOutputTarget } from '@revolist/stencil-dash-output-target';
 
 dashOutputTarget({
   outputDir: './packages/dash/src/lib/components',

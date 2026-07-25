@@ -1,6 +1,6 @@
 {
   "name": "@revolist/stencil-dash-output-target",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "RevoGrid build tool for generating Plotly Dash React component bridges.",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,17 +9,33 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./runtime": {
       "types": "./dist/runtime.d.ts",
-      "import": "./dist/runtime.js"
+      "import": "./dist/runtime.js",
+      "require": "./dist/runtime.js",
+      "default": "./dist/runtime.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/revolist/stencil-dash-output-target.git"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@stencil/core": "^4.43.2",
@@ -28,6 +44,6 @@
     "vitest": "^3.2.4"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   }
 }

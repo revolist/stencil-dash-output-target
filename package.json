@@ -1,7 +1,7 @@
 {
   "name": "@revolist/stencil-dash-output-target",
-  "private": true,
-  "description": "Private RevoGrid build tool for generating Plotly Dash React component bridges.",
+  "version": "1.0.0",
+  "description": "RevoGrid build tool for generating Plotly Dash React component bridges.",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",

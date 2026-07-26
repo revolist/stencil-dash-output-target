@@ -3,6 +3,15 @@ import path from 'node:path';
 import type { DashComponentMeta, DashOutputTargetOptions } from './types.js';
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const BRIDGE_PROPERTY_NAMES = new Set([
+  'id',
+  'className',
+  'style',
+  'eventListeners',
+  'eventData',
+  'syncSourceOnEdit',
+  'setProps',
+]);
 
 function quote(value: string): string {
   return JSON.stringify(value);
@@ -137,6 +146,13 @@ export function validateDashOutputTargetOptions(
   ) {
     errors.push('components must contain non-empty tag names');
   }
+  if (
+    options.defaultEvents &&
+    (!Array.isArray(options.defaultEvents) ||
+      options.defaultEvents.some(event => typeof event !== 'string' || !event))
+  ) {
+    errors.push('defaultEvents must contain non-empty event names');
+  }
   for (const [tagName, componentName] of Object.entries(
     options.componentNames || {},
   )) {
@@ -234,6 +250,66 @@ function renderPropType(
   return `${comment}  ${name}: ${type}${required ? '.isRequired' : ''},`;
 }
 
+function resolveEventMappings(
+  component: DashComponentMeta,
+  propertyNames: readonly string[],
+  options: DashOutputTargetOptions,
+): {
+  eventMappings: [eventName: string, dashProp: string][];
+  defaultEventNames: string[];
+} {
+  const publicEvents = component.events
+    .filter(event => !event.internal)
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const componentEventNames = new Set(
+    publicEvents.map(event => event.name),
+  );
+  const explicitMappings = new Map(
+    Object.entries(options.eventMappings || {}),
+  );
+  const defaultEventNames = new Set([
+    ...(options.defaultEvents || []),
+    ...explicitMappings.keys(),
+  ]);
+  for (const eventName of defaultEventNames) {
+    if (!componentEventNames.has(eventName)) {
+      throw new Error(
+        `Event ${quote(eventName)} is not emitted by ${quote(component.tagName)}`,
+      );
+    }
+  }
+
+  const unavailablePropertyNames = new Set([
+    ...BRIDGE_PROPERTY_NAMES,
+    ...propertyNames,
+  ]);
+  const mappedPropertyNames = new Map<string, string>();
+  const eventMappings: [string, string][] = [];
+  for (const event of publicEvents) {
+    const dashProp = explicitMappings.get(event.name) || event.name;
+    if (!IDENTIFIER.test(dashProp)) {
+      continue;
+    }
+    if (unavailablePropertyNames.has(dashProp)) {
+      throw new Error(
+        `Event ${quote(event.name)} maps to reserved or component property ${quote(dashProp)} in ${quote(component.tagName)}`,
+      );
+    }
+    const existingEvent = mappedPropertyNames.get(dashProp);
+    if (existingEvent) {
+      throw new Error(
+        `Events ${quote(existingEvent)} and ${quote(event.name)} both map to Dash property ${quote(dashProp)} in ${quote(component.tagName)}`,
+      );
+    }
+    mappedPropertyNames.set(dashProp, event.name);
+    eventMappings.push([event.name, dashProp]);
+  }
+  return {
+    eventMappings,
+    defaultEventNames: [...defaultEventNames].sort(),
+  };
+}
+
 export function generateReactComponent(
   component: DashComponentMeta,
   options: DashOutputTargetOptions,
@@ -250,23 +326,14 @@ export function generateReactComponent(
   const properties = component.properties
     .filter(property => !property.internal && !excluded.has(property.name))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const componentEventNames = new Set(
-    component.events.filter(event => !event.internal).map(event => event.name),
-  );
-  const eventMappings = Object.entries(options.eventMappings || {}).sort(
-    ([left], [right]) => left.localeCompare(right),
-  );
-  for (const [eventName] of eventMappings) {
-    if (!componentEventNames.has(eventName)) {
-      throw new Error(
-        `Event ${quote(eventName)} is not emitted by ${quote(component.tagName)}`,
-      );
-    }
-  }
   const eventDocs = new Map(
     component.events.map(event => [event.name, event.docs.text]),
   );
   const propertyNames = properties.map(property => property.name);
+  const {
+    eventMappings,
+    defaultEventNames,
+  } = resolveEventMappings(component, propertyNames, options);
   const customElementImport = renderCustomElementImport(
     component,
     componentName,
@@ -325,6 +392,7 @@ export function generateReactComponent(
     null,
     2,
   );
+  const defaultEventNamesSource = JSON.stringify(defaultEventNames);
   const componentDoc =
     cleanDoc(component.docs.text) ||
     `Dash bridge for the ${component.tagName} custom element.`;
@@ -347,6 +415,7 @@ import {
 ${customElementImport}
 const GRID_PROPERTY_NAMES = Object.freeze(${JSON.stringify(propertyNames)});
 const EVENT_MAPPINGS = Object.freeze(${eventMappingSource});
+const DEFAULT_EVENT_NAMES = Object.freeze(${defaultEventNamesSource});
 
 /**
  * ${componentDoc}
@@ -396,9 +465,35 @@ const ${componentName} = forwardRef(function ${componentName}(props, forwardedRe
     if (!element) {
       return undefined;
     }
-    const listeners = {};
-    for (const [eventName, dashProp] of Object.entries(EVENT_MAPPINGS)) {
-      listeners[eventName] = event => {
+    const selectedEventNames = new Set([
+      ...DEFAULT_EVENT_NAMES,
+      ...normalizeEventNames(props.eventListeners),
+    ]);
+    const dedicatedListeners = {};
+    const genericListeners = {};
+    for (const eventName of selectedEventNames) {
+      const dashProp = Object.prototype.hasOwnProperty.call(
+        EVENT_MAPPINGS,
+        eventName,
+      )
+        ? EVENT_MAPPINGS[eventName]
+        : undefined;
+      if (!dashProp) {
+        genericListeners[eventName] = event => {
+          sequenceRef.current += 1;
+          if (props.setProps) {
+            props.setProps({
+              eventData: createEventEnvelope(
+                eventName,
+                event.detail,
+                sequenceRef.current,
+              ),
+            });
+          }
+        };
+        continue;
+      }
+      dedicatedListeners[eventName] = event => {
         sequenceRef.current += 1;
         const detail =
           eventName === 'afteredit'
@@ -410,6 +505,9 @@ const ${componentName} = forwardRef(function ${componentName}(props, forwardedRe
           sequenceRef.current,
         );
         const updates = { [dashProp]: envelope };
+        if (!DEFAULT_EVENT_NAMES.includes(eventName)) {
+          updates.eventData = envelope;
+        }
         if (
           eventName === 'afteredit' &&
           props.syncSourceOnEdit &&
@@ -424,25 +522,7 @@ const ${componentName} = forwardRef(function ${componentName}(props, forwardedRe
         }
       };
     }
-    const genericListeners = {};
-    for (const eventName of normalizeEventNames(props.eventListeners)) {
-      if (eventName in EVENT_MAPPINGS) {
-        continue;
-      }
-      genericListeners[eventName] = event => {
-        sequenceRef.current += 1;
-        if (props.setProps) {
-          props.setProps({
-            eventData: createEventEnvelope(
-              eventName,
-              event.detail,
-              sequenceRef.current,
-            ),
-          });
-        }
-      };
-    }
-    const cleanupDedicated = bindEventListeners(element, listeners);
+    const cleanupDedicated = bindEventListeners(element, dedicatedListeners);
     const cleanupGeneric = bindEventListeners(element, genericListeners);
     return () => {
       cleanupDedicated();

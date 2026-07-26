@@ -25,9 +25,8 @@ dashOutputTarget({
     },
   },
   excludeProperties: ['plugins', 'editors'],
-  eventMappings: {
-    afteredit: 'afteredit',
-  },
+  // Public Stencil events are discovered automatically.
+  defaultEvents: ['afteredit'],
 });
 ```
 
@@ -44,7 +43,24 @@ Options:
 - `customElements`: optional imports that either self-register, export a
   custom-element class, or export an idempotent `defineCustomElement` function.
 - `excludeProperties`: property names that cannot cross the Dash boundary.
-- `eventMappings`: custom-event names mapped to dedicated Dash properties.
+- `defaultEvents`: auto-discovered event names that remain active without being
+  listed in the generated component's `eventListeners` property.
+- `eventMappings`: optional aliases for auto-discovered public events. Mapped
+  events also remain active by default for backwards compatibility.
+
+Public Stencil properties and events are read directly from compiler metadata.
+Properties become Dash properties automatically. Public events with valid
+property names also become same-name Dash event properties; internal events are
+excluded. Event names that are not valid identifiers can be exposed with an
+explicit alias in `eventMappings`.
+
+To avoid unconditional updates from high-frequency events, only
+`defaultEvents` and explicitly mapped events are active by default. Add any
+other discovered event name to the generated component's `eventListeners`
+property; its envelope is published to the corresponding generated event
+property and the backwards-compatible `eventData` property. Names that are not
+present in Stencil metadata, such as runtime plugin events, continue to publish
+through `eventData` only.
 
 The output target does not decide which component properties are safe at a Python
 boundary. Consumers must exclude function-, class-, Promise-, DOM-, and

@@ -44,6 +44,21 @@ const component: DashComponentMeta = {
       docs: { text: 'After edit.' },
       internal: false,
     },
+    {
+      name: 'beforeedit',
+      docs: { text: 'Before edit.' },
+      internal: false,
+    },
+    {
+      name: 'value-change',
+      docs: { text: 'Dashed event.' },
+      internal: false,
+    },
+    {
+      name: 'internalchange',
+      docs: { text: 'Internal event.' },
+      internal: true,
+    },
   ],
 };
 
@@ -53,6 +68,7 @@ describe('generator', () => {
       validateDashOutputTargetOptions({
         outputDir: '',
         componentNames: { 'revo-grid': 'not-valid!' },
+        defaultEvents: [''],
         eventMappings: { afteredit: 'not-valid!' },
         customElements: {
           'revo-grid': {
@@ -64,6 +80,7 @@ describe('generator', () => {
       }),
     ).toEqual([
       'outputDir must be a non-empty string',
+      'defaultEvents must contain non-empty event names',
       'componentNames["revo-grid"] must be a valid JavaScript identifier',
       'customElements["revo-grid"].importPath must be a non-empty string',
       'customElements["revo-grid"].exportName must be a valid JavaScript identifier',
@@ -111,7 +128,7 @@ describe('generator', () => {
         },
       },
       excludeProperties: ['plugins'],
-      eventMappings: { afteredit: 'afteredit' },
+      defaultEvents: ['afteredit'],
     });
 
     expect(generated.fileName).toBe('RevoGrid.react.js');
@@ -125,23 +142,59 @@ describe('generator', () => {
     );
     expect(generated.source).not.toContain('plugins: PropTypes');
     expect(generated.source).toContain('afteredit: PropTypes.object');
+    expect(generated.source).toContain('beforeedit: PropTypes.object');
+    expect(generated.source).not.toContain('internalchange: PropTypes');
+    expect(generated.source).not.toContain('value-change: PropTypes');
+    expect(generated.source).toContain(
+      'const DEFAULT_EVENT_NAMES = Object.freeze(["afteredit"]);',
+    );
+    expect(generated.source).toContain(
+      'if (!DEFAULT_EVENT_NAMES.includes(eventName))',
+    );
+    expect(generated.source).toContain(
+      'Object.prototype.hasOwnProperty.call(',
+    );
     expect(generated.source).toContain(
       'const element = document.createElement("revo-grid");',
     );
     expect(generated.source).toContain("return React.createElement('div'");
   });
 
+  it('discovers public events and supports explicit aliases', () => {
+    const generated = generateReactComponent(component, {
+      outputDir: 'out',
+      eventMappings: {
+        afteredit: 'editEvent',
+        'value-change': 'valueChange',
+      },
+    });
+
+    expect(generated.source).toContain('beforeedit: PropTypes.object');
+    expect(generated.source).toContain('editEvent: PropTypes.object');
+    expect(generated.source).toContain('valueChange: PropTypes.object');
+    expect(generated.source).toContain(
+      '"afteredit": "editEvent"',
+    );
+    expect(generated.source).toContain(
+      '"value-change": "valueChange"',
+    );
+    expect(generated.source).toContain(
+      'const DEFAULT_EVENT_NAMES = Object.freeze(["afteredit","value-change"]);',
+    );
+  });
+
   it('produces deterministic output regardless of metadata order', () => {
     const options = {
       outputDir: 'out',
       excludeProperties: ['plugins'],
-      eventMappings: { afteredit: 'afteredit' },
+      defaultEvents: ['afteredit'],
     };
     const first = generateReactComponent(component, options).source;
     const second = generateReactComponent(
       {
         ...component,
         properties: [...component.properties].reverse(),
+        events: [...component.events].reverse(),
       },
       options,
     ).source;
@@ -155,6 +208,32 @@ describe('generator', () => {
         eventMappings: { missing: 'missing' },
       }),
     ).toThrow('Event "missing" is not emitted by "revo-grid"');
+  });
+
+  it('rejects default events absent from compiler metadata', () => {
+    expect(() =>
+      generateReactComponent(component, {
+        outputDir: 'out',
+        defaultEvents: ['missing'],
+      }),
+    ).toThrow('Event "missing" is not emitted by "revo-grid"');
+  });
+
+  it('rejects event properties that collide with component properties', () => {
+    expect(() =>
+      generateReactComponent(
+        {
+          ...component,
+          properties: [
+            ...component.properties,
+            property('beforeedit', 'boolean'),
+          ],
+        },
+        { outputDir: 'out' },
+      ),
+    ).toThrow(
+      'Event "beforeedit" maps to reserved or component property "beforeedit" in "revo-grid"',
+    );
   });
 
   it('selects requested public components and writes a stable index', async () => {

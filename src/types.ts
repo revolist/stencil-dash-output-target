@@ -42,8 +42,17 @@ export interface DashOutputTargetOptions {
   excludeProperties?: string[];
   /**
    * Native custom-event name to Dash property name.
+   *
+   * Public Stencil events are exposed automatically under their native names.
+   * Use this option to alias an event. Mapped events also remain active by
+   * default for backwards compatibility.
    */
   eventMappings?: Record<string, string>;
+  /**
+   * Public Stencil event names that are active without listing them in the
+   * generated component's `eventListeners` prop.
+   */
+  defaultEvents?: string[];
 }
 
 export interface DashPropertyMeta {

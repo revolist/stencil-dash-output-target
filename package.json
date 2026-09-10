@@ -42,7 +42,7 @@
     "@stencil/core": "^4.43.2",
     "@types/node": "^22.0.0",
     "typescript": "^5.5.4",
-    "vitest": "^3.2.4"
+    "vitest": "^5.0.0"
   },
   "engines": {
     "node": ">=22.12"
